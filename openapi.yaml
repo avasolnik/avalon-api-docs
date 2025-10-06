@@ -1,0 +1,317 @@
+openapi: 3.1.0
+info:
+  title: Charge Planning Optimizer API
+  version: 1.0.0
+  description: >
+    The Charge Planning Optimizer API computes optimized charging schedules
+    for electric fleets based on vehicle availability, energy demand, and
+    infrastructure constraints.  
+    Optionally, it can generate OCPP-compatible smart charging profiles for
+    direct dispatch to charge points.
+
+servers:
+  - url: https://api.example.com/optimizer/v1
+    description: Production environment
+
+tags:
+  - name: Optimization
+    description: Endpoints for charging plan optimization
+
+paths:
+  /charge-planning:
+    post:
+      summary: Optimize fleet charging plans
+      description: >
+        Computes optimized start/end times, EVSE assignments, and optionally
+        detailed smart charging profiles for the provided tours.
+      tags: [Optimization]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChargePlanningRequest"
+            examples:
+              default:
+                summary: Example request
+                value:
+                  companyId: avalon_transportation
+                  locationId: aschaffenburg
+                  returnOptimizedProfiles: true
+                  cluster:
+                    id: cluster_01
+                    maxLimit: 800000
+                  chargePoints:
+                    - id: cp_01
+                      fullName: Charger North
+                      maxLimit: 320000
+                    - id: cp_02
+                      fullName: Charger South
+                      maxLimit: 220000
+                  evses:
+                    - id: evse_01
+                      cpId: cp_01
+                      cpName: Charger North
+                      fullName: Charger North - Socket A
+                      maxLimit: 160000
+                      maxCurrentLimit: 250
+                    - id: evse_02
+                      cpId: cp_01
+                      cpName: Charger North
+                      fullName: Charger North - Socket B
+                      maxLimit: 160000
+                      maxCurrentLimit: 250
+                  tours:
+                    - id: 91Ov9Uj7h-vxokQWXuMJm
+                      priority: 2
+                      energyDemand: 96.69
+                      fromDay: THURSDAY
+                      fromTime: "15:00"
+                      endDay: TUESDAY
+                      endTime: "17:00"
+                      vehicle:
+                        id: vYbisDjeZFFcYyx0yogX
+                        key: AB-TG-2000
+                        idTag: 01F2AE40110189
+                        capacity: 621
+                        avgChaPower: 260
+                        thresholdEnergy: 600
+                        reducedChaPower: 70
+                        systemVoltage: 800
+                        maxChaPower: 400
+                        minChaPower: 0
+      responses:
+        "200":
+          description: Optimization successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChargePlanningResponse"
+              examples:
+                withProfiles:
+                  summary: Example with smartChargingProfile
+                  value:
+                    status: success
+                    optimizedTours:
+                      - id: 91Ov9Uj7h-vxokQWXuMJm
+                        recommendedStartDay: THURSDAY
+                        recommendedStartTime: "20:00"
+                        recommendedEndDay: FRIDAY
+                        recommendedEndTime: "03:30"
+                        recommendedTargetSoc: 0.8
+                        cp: cp_01
+                        evse: evse_01
+                        smartChargingProfile:
+                          - time: 0
+                            power: 123313
+                          - time: 4500
+                            power: 94971
+                          - time: 11100
+                            power: 92910
+                          - time: 16200
+                            power: 0
+                    clusterLoadProfile:
+                      - timestamp: "2025-10-06T20:00:00Z"
+                        power: 180000
+                      - timestamp: "2025-10-06T20:05:00Z"
+                        power: 190000
+        "400":
+          description: Bad request – invalid or missing parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden – invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+  schemas:
+    ChargePlanningRequest:
+      type: object
+      required:
+        - companyId
+        - locationId
+        - cluster
+        - chargePoints
+        - evses
+        - tours
+      properties:
+        companyId:
+          type: string
+          description: Unique company identifier
+        locationId:
+          type: string
+          description: Unique location identifier
+        returnOptimizedProfiles:
+          type: boolean
+          description: >
+            If true, the optimizer returns detailed charging profiles
+            (`smartChargingProfile`) for each tour.
+          default: false
+        cluster:
+          $ref: "#/components/schemas/Cluster"
+        chargePoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChargePoint"
+        evses:
+          type: array
+          items:
+            $ref: "#/components/schemas/EVSE"
+        tours:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tour"
+
+    Cluster:
+      type: object
+      required: [id, maxLimit]
+      properties:
+        id:
+          type: string
+        maxLimit:
+          type: number
+          description: Maximum site power limit in watts
+
+    ChargePoint:
+      type: object
+      required: [id, fullName, maxLimit]
+      properties:
+        id:
+          type: string
+        fullName:
+          type: string
+        maxLimit:
+          type: number
+          description: Maximum charger power in watts
+
+    EVSE:
+      type: object
+      required: [id, cpId, cpName, fullName, maxLimit, maxCurrentLimit]
+      properties:
+        id: { type: string }
+        cpId: { type: string }
+        cpName: { type: string }
+        fullName: { type: string }
+        maxLimit: { type: number }
+        maxCurrentLimit: { type: number }
+
+    Tour:
+      type: object
+      required:
+        - id
+        - priority
+        - energyDemand
+        - fromDay
+        - fromTime
+        - endDay
+        - endTime
+        - vehicle
+      properties:
+        id: { type: string }
+        priority: { type: number }
+        energyDemand: { type: number }
+        fromDay: { type: string }
+        fromTime: { type: string }
+        endDay: { type: string }
+        endTime: { type: string }
+        vehicle:
+          $ref: "#/components/schemas/Vehicle"
+
+    Vehicle:
+      type: object
+      required:
+        - id
+        - key
+        - idTag
+        - capacity
+        - avgChaPower
+        - maxChaPower
+        - minChaPower
+        - thresholdEnergy
+        - reducedChaPower
+        - systemVoltage
+      properties:
+        id: { type: string }
+        key: { type: string }
+        idTag: { type: string }
+        capacity: { type: number }
+        avgChaPower: { type: number }
+        maxChaPower: { type: number }
+        minChaPower: { type: number }
+        thresholdEnergy: { type: number }
+        reducedChaPower: { type: number }
+        systemVoltage: { type: number }
+
+    ChargePlanningResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+        optimizedTours:
+          type: array
+          items:
+            $ref: "#/components/schemas/OptimizedTour"
+        clusterLoadProfile:
+          type: array
+          description: Optional aggregated site power profile
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+              power:
+                type: number
+        errorMessage:
+          type: string
+
+    OptimizedTour:
+      type: object
+      properties:
+        id: { type: string }
+        recommendedStartDay: { type: string }
+        recommendedStartTime: { type: string }
+        recommendedEndDay: { type: string }
+        recommendedEndTime: { type: string }
+        recommendedTargetSoc: { type: number }
+        cp: { type: string }
+        evse: { type: string }
+        smartChargingProfile:
+          type: array
+          description: Optional OCPP-compatible charging profile
+          items:
+            type: object
+            properties:
+              time:
+                type: number
+                description: Time since start of window in seconds
+              power:
+                type: number
+                description: Power level in watts
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Description of the error
