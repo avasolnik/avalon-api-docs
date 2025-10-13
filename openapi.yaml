@@ -142,6 +142,7 @@ components:
       type: apiKey
       in: header
       name: x-api-key
+      description: API key required for authentication and authorization.
 
   schemas:
     ChargePlanningRequest:
@@ -156,28 +157,31 @@ components:
       properties:
         companyId:
           type: string
-          description: Unique company identifier
+          description: Unique identifier of the company performing the optimization.
         locationId:
           type: string
-          description: Unique location identifier
+          description: Unique identifier of the physical depot or site.
         returnOptimizedProfiles:
           type: boolean
           description: >
-            If true, the optimizer returns detailed charging profiles
-            (`smartChargingProfile`) for each tour.
+            If true, the optimizer will return for each tour a `smartChargingProfile`
+            array showing detailed time–power pairs suitable for OCPP dispatch.
           default: false
         cluster:
           $ref: "#/components/schemas/Cluster"
         chargePoints:
           type: array
+          description: List of charge points (stations) available for optimization.
           items:
             $ref: "#/components/schemas/ChargePoint"
         evses:
           type: array
+          description: List of EVSE connectors associated with the charge points.
           items:
             $ref: "#/components/schemas/EVSE"
         tours:
           type: array
+          description: List of all vehicle tours to be optimized.
           items:
             $ref: "#/components/schemas/Tour"
 
@@ -187,9 +191,10 @@ components:
       properties:
         id:
           type: string
+          description: Unique cluster identifier.
         maxLimit:
           type: number
-          description: Maximum site power limit in watts
+          description: Maximum power capacity of the cluster in watts.
 
     ChargePoint:
       type: object
@@ -197,22 +202,36 @@ components:
       properties:
         id:
           type: string
+          description: Unique charge point (station) identifier.
         fullName:
           type: string
+          description: Human-readable charge point name.
         maxLimit:
           type: number
-          description: Maximum charger power in watts
+          description: Maximum total charger power limit in watts.
 
     EVSE:
       type: object
       required: [id, cpId, cpName, fullName, maxLimit, maxCurrentLimit]
       properties:
-        id: { type: string }
-        cpId: { type: string }
-        cpName: { type: string }
-        fullName: { type: string }
-        maxLimit: { type: number }
-        maxCurrentLimit: { type: number }
+        id:
+          type: string
+          description: Unique EVSE identifier (individual connector).
+        cpId:
+          type: string
+          description: Identifier of the parent charge point this EVSE belongs to.
+        cpName:
+          type: string
+          description: Name of the parent charge point.
+        fullName:
+          type: string
+          description: Human-readable name for the EVSE (e.g. station + socket name).
+        maxLimit:
+          type: number
+          description: Maximum power limit for the EVSE in watts.
+        maxCurrentLimit:
+          type: number
+          description: Maximum current (in amperes) that can be delivered by this EVSE.
 
     Tour:
       type: object
@@ -226,13 +245,27 @@ components:
         - endTime
         - vehicle
       properties:
-        id: { type: string }
-        priority: { type: number }
-        energyDemand: { type: number }
-        fromDay: { type: string }
-        fromTime: { type: string }
-        endDay: { type: string }
-        endTime: { type: string }
+        id:
+          type: string
+          description: Unique identifier of the tour or charging session.
+        priority:
+          type: number
+          description: Numeric priority level (higher = more important).
+        energyDemand:
+          type: number
+          description: Required energy demand for the vehicle in kWh.
+        fromDay:
+          type: string
+          description: Earliest weekday when the vehicle is available for charging.
+        fromTime:
+          type: string
+          description: Earliest start time of availability (HH:MM, 24-hour format).
+        endDay:
+          type: string
+          description: Latest weekday when the charging must be completed.
+        endTime:
+          type: string
+          description: Latest end time of availability (HH:MM, 24-hour format).
         vehicle:
           $ref: "#/components/schemas/Vehicle"
 
@@ -250,16 +283,36 @@ components:
         - reducedChaPower
         - systemVoltage
       properties:
-        id: { type: string }
-        key: { type: string }
-        idTag: { type: string }
-        capacity: { type: number }
-        avgChaPower: { type: number }
-        maxChaPower: { type: number }
-        minChaPower: { type: number }
-        thresholdEnergy: { type: number }
-        reducedChaPower: { type: number }
-        systemVoltage: { type: number }
+        id:
+          type: string
+          description: Unique identifier of the vehicle.
+        key:
+          type: string
+          description: Vehicle license plate or internal key.
+        idTag:
+          type: string
+          description: RFID or authorization identifier used at the charge point.
+        capacity:
+          type: number
+          description: Battery capacity in kilowatt-hours.
+        avgChaPower:
+          type: number
+          description: Average charging power in watts.
+        maxChaPower:
+          type: number
+          description: Maximum charging power the vehicle supports in watts.
+        minChaPower:
+          type: number
+          description: Minimum charging power the vehicle can sustain in watts.
+        thresholdEnergy:
+          type: number
+          description: Energy threshold (in kWh) after which reduced power is applied.
+        reducedChaPower:
+          type: number
+          description: Reduced charging power (in watts) applied beyond the threshold.
+        systemVoltage:
+          type: number
+          description: Nominal DC system voltage of the battery.
 
     ChargePlanningResponse:
       type: object
@@ -267,51 +320,74 @@ components:
         status:
           type: string
           enum: [success, error]
+          description: Processing status of the optimization.
         optimizedTours:
           type: array
+          description: List of tours with assigned start/end times and EVSEs.
           items:
             $ref: "#/components/schemas/OptimizedTour"
         clusterLoadProfile:
           type: array
-          description: Optional aggregated site power profile
+          description: Optional array describing total cluster power load over time.
           items:
             type: object
             properties:
               timestamp:
                 type: string
                 format: date-time
+                description: Timestamp (UTC) for this power measurement.
               power:
                 type: number
+                description: Total site power draw in watts at the given time.
         errorMessage:
           type: string
+          description: Human-readable error message, present only when status = error.
 
     OptimizedTour:
       type: object
       properties:
-        id: { type: string }
-        recommendedStartDay: { type: string }
-        recommendedStartTime: { type: string }
-        recommendedEndDay: { type: string }
-        recommendedEndTime: { type: string }
-        recommendedTargetSoc: { type: number }
-        cp: { type: string }
-        evse: { type: string }
+        id:
+          type: string
+          description: Identifier of the optimized tour.
+        recommendedStartDay:
+          type: string
+          description: Recommended weekday to begin charging.
+        recommendedStartTime:
+          type: string
+          description: Recommended start time for charging (HH:MM).
+        recommendedEndDay:
+          type: string
+          description: Recommended weekday to finish charging.
+        recommendedEndTime:
+          type: string
+          description: Recommended end time for charging (HH:MM).
+        recommendedTargetSoc:
+          type: number
+          description: Optional target state of charge (fraction between 0 and 1).
+        cp:
+          type: string
+          description: Assigned charge point ID.
+        evse:
+          type: string
+          description: Assigned EVSE ID.
         smartChargingProfile:
           type: array
-          description: Optional OCPP-compatible charging profile
+          description: >
+            Optional OCPP-compatible smart charging profile showing
+            time–power mapping for the recommended charging period.
           items:
             type: object
             properties:
               time:
                 type: number
-                description: Time since start of window in seconds
+                description: Elapsed time since charging start in seconds.
               power:
                 type: number
-                description: Power level in watts
+                description: Charging power in watts at that time.
 
     ErrorResponse:
       type: object
       properties:
         error:
           type: string
-          description: Description of the error
+          description: Description of the error that occurred.
