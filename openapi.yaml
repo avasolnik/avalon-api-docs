@@ -10,8 +10,8 @@ info:
     direct dispatch to charge points.
 
 servers:
-  - url: https://api.example.com/optimizer/v1
-    description: Production environment
+  - url: https://api.avalon-cloud.de/optimizer/v1
+    description: Testing environment
 
 tags:
   - name: Optimization
