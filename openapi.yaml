@@ -11,7 +11,7 @@ info:
 
 servers:
   - url: https://api.avalon-cloud.de/optimizer/v1
-    description: Testing environment
+    description: Non-productive
 
 tags:
   - name: Optimization
