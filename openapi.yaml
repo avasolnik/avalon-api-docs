@@ -16,6 +16,8 @@ servers:
 tags:
   - name: Optimization
     description: Endpoints for charging plan optimization
+  - name: SmartChargeControl
+    description: Endpoints for generating power-optimized Smart Charging Profiles (SCP)
 
 paths:
   /charge-planning:
@@ -116,6 +118,123 @@ paths:
                       - timestamp: "2025-10-06T20:00:00Z"
                         power: 180000
                       - timestamp: "2025-10-06T20:05:00Z"
+                        power: 190000
+        "400":
+          description: Bad request – invalid or missing parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden – invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /smart-charge-control:
+    post:
+      summary: Generate Smart Charge Control Profiles
+      description: >
+        Computes optimized Smart Charging Profiles for a given set of tours (charging sessions)
+        based on infrastructure limits and the selected optimization mode (price-optimized or load-optimized).
+        Each profile represents a power-vs-time schedule suitable for OCPP-compatible dispatch.
+        If a tour's startSoc is omitted or zero, a default of 0.2 (20%) is assumed.
+      tags: [SmartChargeControl]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SmartChargeControlRequest"
+            examples:
+              default:
+                summary: Example request
+                value:
+                  companyId: avalon_transportation
+                  locationId: aschaffenburg
+                  optimizationMode: price
+                  cluster:
+                    id: cluster_01
+                    maxLimit: 800000
+                  chargePoints:
+                    - id: cp_01
+                      fullName: Charger North
+                      maxLimit: 320000
+                    - id: cp_02
+                      fullName: Charger South
+                      maxLimit: 220000
+                  evses:
+                    - id: evse_01
+                      cpId: cp_01
+                      cpName: Charger North
+                      fullName: Charger North - Socket A
+                      maxLimit: 160000
+                      maxCurrentLimit: 250
+                    - id: evse_02
+                      cpId: cp_02
+                      cpName: Charger South
+                      fullName: Charger South - Socket A
+                      maxLimit: 110000
+                      maxCurrentLimit: 160
+                  tours:
+                    - id: tour_01
+                      recommendedStartDay: THURSDAY
+                      recommendedStartTime: "20:00"
+                      recommendedEndDay: FRIDAY
+                      recommendedEndTime: "03:30"
+                      startSoc: 0.2
+                      targetSoc: 0.8
+                      vehicle:
+                        id: vYbisDjeZFFcYyx0yogX
+                        key: AB-TG-2000
+                        idTag: 01F2AE40110189
+                        capacity: 621
+                        avgChaPower: 260
+                        maxChaPower: 400
+                        minChaPower: 0
+                        thresholdEnergy: 600
+                        reducedChaPower: 70
+                        systemVoltage: 800
+                      cp: cp_01
+                      evse: evse_01
+      responses:
+        "200":
+          description: Smart Charge Control optimization successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SmartChargeControlResponse"
+              examples:
+                success:
+                  summary: Example response
+                  value:
+                    status: success
+                    profiles:
+                      - tourId: tour_01
+                        cp: cp_01
+                        evse: evse_01
+                        smartChargingProfile:
+                          - time: 0
+                            power: 120000
+                          - time: 300
+                            power: 90000
+                          - time: 600
+                            power: 60000
+                          - time: 900
+                            power: 0
+                    clusterLoadProfile:
+                      - timestamp: "2025-10-28T20:00:00Z"
+                        power: 180000
+                      - timestamp: "2025-10-28T20:05:00Z"
                         power: 190000
         "400":
           description: Bad request – invalid or missing parameters
@@ -391,3 +510,131 @@ components:
         error:
           type: string
           description: Description of the error that occurred.
+
+    SmartChargeControlRequest:
+      type: object
+      required:
+        - companyId
+        - locationId
+        - optimizationMode
+        - cluster
+        - chargePoints
+        - evses
+        - tours
+      properties:
+        companyId:
+          type: string
+          description: Unique company identifier.
+        locationId:
+          type: string
+          description: Location or depot identifier.
+        optimizationMode:
+          type: string
+          enum: [price, load]
+          description: Optimization strategy ("price" for cost minimization, "load" for peak reduction).
+        cluster:
+          $ref: "#/components/schemas/Cluster"
+        chargePoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChargePoint"
+        evses:
+          type: array
+          items:
+            $ref: "#/components/schemas/EVSE"
+        tours:
+          type: array
+          items:
+            $ref: "#/components/schemas/TourForSmartChargeControl"
+
+    TourForSmartChargeControl:
+      type: object
+      required:
+        - id
+        - recommendedStartDay
+        - recommendedStartTime
+        - recommendedEndDay
+        - recommendedEndTime
+        - targetSoc
+        - vehicle
+        - cp
+        - evse
+      properties:
+        id:
+          type: string
+          description: Unique tour or session identifier.
+        recommendedStartDay:
+          type: string
+          description: Planned weekday to begin charging.
+        recommendedStartTime:
+          type: string
+          description: Planned start time (HH:MM).
+        recommendedEndDay:
+          type: string
+          description: Planned weekday to finish charging.
+        recommendedEndTime:
+          type: string
+          description: Planned end time (HH:MM).
+        startSoc:
+          type: number
+          description: Starting state of charge (0–1). Defaults to 0.2 if not provided.
+        targetSoc:
+          type: number
+          description: Desired state of charge at session end (0–1).
+        vehicle:
+          $ref: "#/components/schemas/Vehicle"
+        cp:
+          type: string
+          description: Assigned charge point ID.
+        evse:
+          type: string
+          description: Assigned EVSE ID.
+
+    SmartChargeControlResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+        profiles:
+          type: array
+          description: Generated Smart Charging Profiles for each tour.
+          items:
+            type: object
+            properties:
+              tourId:
+                type: string
+              cp:
+                type: string
+                description: Charge point identifier.
+              evse:
+                type: string
+                description: EVSE identifier.
+              smartChargingProfile:
+                type: array
+                description: Time–power mapping for the tour.
+                items:
+                  type: object
+                  properties:
+                    time:
+                      type: number
+                      description: Elapsed time in seconds since start.
+                    power:
+                      type: number
+                      description: Power in watts at that time.
+        clusterLoadProfile:
+          type: array
+          description: Aggregated cluster power profile (optional).
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+                description: UTC timestamp.
+              power:
+                type: number
+                description: Total cluster power in watts.
+        errorMessage:
+          type: string
+          description: Error details if `status = error`.
