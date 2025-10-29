@@ -26,7 +26,7 @@ paths:
       description: >
         Computes optimized start/end times, EVSE assignments, and optionally
         detailed smart charging profiles for the provided tours.
-      tags: [Optimization]
+      tags: [ChargePlanning]
       security:
         - ApiKeyAuth: []
       requestBody:
