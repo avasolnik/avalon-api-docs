@@ -14,7 +14,7 @@ servers:
     description: Non-productive
 
 tags:
-  - name: Optimization
+  - name: ChargePlanning
     description: Endpoints for charging plan optimization
   - name: SmartChargeControl
     description: Endpoints for generating power-optimized Smart Charging Profiles (SCP) and live control
