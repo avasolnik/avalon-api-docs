@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: Charge Planning Optimizer API
-  version: 1.0.0
+  version: 1.1.0
   description: >
     The Charge Planning Optimizer API computes optimized charging schedules
     for electric fleets based on vehicle availability, energy demand, and
     infrastructure constraints.  
-    Optionally, it can generate OCPP-compatible smart charging profiles for
-    direct dispatch to charge points.
+    It can generate OCPP-compatible Smart Charging Profiles (SCP) for direct
+    dispatch to charge points and supports live, event-driven optimization.
 
 servers:
   - url: https://api.avalon-cloud.de/optimizer/v1
@@ -17,7 +17,7 @@ tags:
   - name: Optimization
     description: Endpoints for charging plan optimization
   - name: SmartChargeControl
-    description: Endpoints for generating power-optimized Smart Charging Profiles (SCP)
+    description: Endpoints for generating power-optimized Smart Charging Profiles (SCP) and live control
 
 paths:
   /charge-planning:
@@ -78,11 +78,11 @@ paths:
                         key: AB-TG-2000
                         idTag: 01F2AE40110189
                         capacity: 621
-                        avgChaPower: 260
+                        avgChaPower: 260000
                         thresholdEnergy: 600
-                        reducedChaPower: 70
+                        reducedChaPower: 70000
                         systemVoltage: 800
-                        maxChaPower: 400
+                        maxChaPower: 400000
                         minChaPower: 0
       responses:
         "200":
@@ -198,11 +198,11 @@ paths:
                         key: AB-TG-2000
                         idTag: 01F2AE40110189
                         capacity: 621
-                        avgChaPower: 260
-                        maxChaPower: 400
+                        avgChaPower: 260000
+                        maxChaPower: 400000
                         minChaPower: 0
                         thresholdEnergy: 600
-                        reducedChaPower: 70
+                        reducedChaPower: 70000
                         systemVoltage: 800
                       cp: cp_01
                       evse: evse_01
@@ -244,6 +244,161 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
           description: Forbidden – invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /smart-charge-control/snapshot:
+    post:
+      summary: Live optimization snapshot (batch of Start/Ongoing/Stop)
+      description: >
+        Accepts a snapshot of all currently relevant sessions (transactions) for a given location/cluster
+        with per-item status `Start | Ongoing | Stop`. The server merges this snapshot with its internal plan
+        and live-block, resolves vehicles and tours as needed, and computes Smart Charging Profiles (SCP)
+        for all `Start` and `Ongoing` sessions atomically.  
+        Infrastructure objects (cluster/CPs/EVSEs) are **optional** in the request if they are already
+        configured in the provider's system. If omitted and the server cannot resolve the infrastructure
+        consistently, it returns an error per affected item with `resultStatus = "infra_missing"`.
+      tags: [SmartChargeControl]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - in: header
+          name: X-Snapshot-Timestamp
+          required: false
+          description: Optional UTC timestamp of the snapshot used for idempotency and ordering.
+          schema:
+            type: string
+            format: date-time
+        - in: header
+          name: X-Idempotency-Key
+          required: false
+          description: Optional idempotency key for safe retries (e.g., hash of locationId + timestamp).
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LiveOptimizationSnapshotRequest"
+            examples:
+              fullSnapshot:
+                summary: Full snapshot with Start/Ongoing/Stop
+                value:
+                  companyId: avalon_transportation
+                  locationId: aschaffenburg
+                  optimizationMode: price
+                  cluster:
+                    id: cluster_01
+                    maxLimit: 800000
+                  chargePoints:
+                    - id: cp_01
+                      fullName: Charger North
+                      maxLimit: 320000
+                  evses:
+                    - id: evse_01
+                      cpId: cp_01
+                      cpName: Charger North
+                      fullName: Socket A
+                      maxLimit: 160000
+                      maxCurrentLimit: 250
+                  payloadMode: full_snapshot
+                  sessions:
+                    - status: Start
+                      transactionId: tx_9001
+                      idTag: 01F2AE40110189
+                      cp: cp_01
+                      evse: evse_01
+                      soc: 0.32
+                      timestamp: "2025-10-29T12:05:00Z"
+                    - status: Ongoing
+                      transactionId: tx_8123
+                      cp: cp_01
+                      evse: evse_01
+                      soc: 0.54
+                      timestamp: "2025-10-29T12:05:00Z"
+                    - status: Stop
+                      transactionId: tx_7007
+                      timestamp: "2025-10-29T12:04:00Z"
+              ongoingOnly:
+                summary: Ongoing-only snapshot
+                value:
+                  companyId: avalon_transportation
+                  locationId: aschaffenburg
+                  payloadMode: ongoing_only
+                  optimizationMode: load
+                  sessions:
+                    - status: Ongoing
+                      transactionId: tx_8123
+                      cp: cp_01
+                      evse: evse_01
+                      soc: 0.54
+                      timestamp: "2025-10-29T12:05:00Z"
+      responses:
+        "200":
+          description: Live optimization performed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveOptimizationResponse"
+              examples:
+                example:
+                  summary: Example response with mixed results
+                  value:
+                    status: success
+                    results:
+                      - transactionId: tx_9001
+                        tourId: tour_01
+                        cp: cp_01
+                        evse: evse_01
+                        resultStatus: ok
+                        smartChargingProfile:
+                          - time: 0
+                            power: 120000
+                          - time: 300
+                            power: 90000
+                          - time: 600
+                            power: 60000
+                          - time: 900
+                            power: 0
+                      - transactionId: tx_8123
+                        tourId: tour_05
+                        cp: cp_01
+                        evse: evse_01
+                        resultStatus: ok
+                        smartChargingProfile: []
+                      - transactionId: tx_7007
+                        resultStatus: stopped
+                      - transactionId: tx_9999
+                        resultStatus: infra_missing
+                        message: EVSE not found in provider configuration
+                    clusterLoadProfile:
+                      - timestamp: "2025-10-29T12:05:00Z"
+                        power: 180000
+                      - timestamp: "2025-10-29T12:10:00Z"
+                        power: 190000
+        "400":
+          description: Bad request – invalid or missing parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden – invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Unprocessable – infrastructure could not be resolved from server-side config
           content:
             application/json:
               schema:
@@ -517,9 +672,6 @@ components:
         - companyId
         - locationId
         - optimizationMode
-        - cluster
-        - chargePoints
-        - evses
         - tours
       properties:
         companyId:
@@ -638,3 +790,152 @@ components:
         errorMessage:
           type: string
           description: Error details if `status = error`.
+
+    LiveOptimizationSnapshotRequest:
+      type: object
+      required:
+        - companyId
+        - locationId
+        - sessions
+      properties:
+        companyId:
+          type: string
+          description: Unique company identifier.
+        locationId:
+          type: string
+          description: Location or depot identifier.
+        optimizationMode:
+          type: string
+          enum: [price, load]
+          description: Optional override; if omitted, server uses location default.
+        payloadMode:
+          type: string
+          enum: [full_snapshot, ongoing_only]
+          description: >
+            Indicates whether the payload lists all relevant sessions (full_snapshot) or only ongoing ones.
+            Missing sessions in `ongoing_only` are not interpreted as stopped.
+        cluster:
+          $ref: "#/components/schemas/Cluster"
+        chargePoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChargePoint"
+        evses:
+          type: array
+          items:
+            $ref: "#/components/schemas/EVSE"
+        sessions:
+          type: array
+          minItems: 1
+          items:
+            oneOf:
+              - $ref: "#/components/schemas/LiveStartSessionItem"
+              - $ref: "#/components/schemas/LiveOngoingSessionItem"
+              - $ref: "#/components/schemas/LiveStopSessionItem"
+
+    LiveStartSessionItem:
+      type: object
+      required: [status, transactionId, idTag, cp, evse, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [Start]
+        transactionId:
+          type: string
+        idTag:
+          type: string
+        cp:
+          type: string
+        evse:
+          type: string
+        soc:
+          type: number
+          description: State of charge (0–1). If omitted, server uses 0.2 default for energy calc.
+        timestamp:
+          type: string
+          format: date-time
+
+    LiveOngoingSessionItem:
+      type: object
+      required: [status, transactionId, cp, evse, soc, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [Ongoing]
+        transactionId:
+          type: string
+        cp:
+          type: string
+        evse:
+          type: string
+        soc:
+          type: number
+          description: State of charge (0–1).
+        timestamp:
+          type: string
+          format: date-time
+
+    LiveStopSessionItem:
+      type: object
+      required: [status, transactionId, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [Stop]
+        transactionId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    LiveOptimizationResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/LiveOptimizationResultItem"
+        clusterLoadProfile:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+              power:
+                type: number
+        errorMessage:
+          type: string
+
+    LiveOptimizationResultItem:
+      type: object
+      properties:
+        transactionId:
+          type: string
+        tourId:
+          type: string
+          description: Linked tour/session identifier if available.
+        cp:
+          type: string
+        evse:
+          type: string
+        resultStatus:
+          type: string
+          enum: [ok, stopped, no_plan, unknown_idTag, unknown_transaction, ignored_non_planned, infeasible, infra_missing]
+        message:
+          type: string
+        smartChargingProfile:
+          type: array
+          items:
+            type: object
+            properties:
+              time:
+                type: number
+                description: Elapsed time in seconds since start.
+              power:
+                type: number
+                description: Power in watts at that time.
